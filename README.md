@@ -28,7 +28,7 @@ The application is configured using the following environment variables:
 | `SENDER_FILTER`   | Filter emails by sender (contains)              | ""                |
 | `UNSEEN_ONLY`     | Process only unread emails                      | `true`            |
 | `READ_ONLY`       | Open the mailbox in read-only mode              | `true`            |
-| `ATTACHMENT_TYPE` | MIME type of attachments to download            | `application/pdf` |
+| `ATTACHMENT_TYPES` | MIME types of attachments to download (comma separated) | `application/pdf` |
 | `COMMAND`         | Command to execute on downloaded attachments    | `ls -lh %s`       |
 | `LOG_LEVEL`       | Log level (DEBUG, INFO, WARN, ERROR)            | `INFO`            |
 

@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/emersion/go-imap"
@@ -17,17 +18,17 @@ import (
 )
 
 var (
-	imapServer     = os.Getenv("IMAP_SERVER")
-	username       = os.Getenv("EMAIL_USERNAME")
-	password       = os.Getenv("EMAIL_PASSWORD")
-	outputDir      = cmp.Or(os.Getenv("OUTPUT_DIR"), "output")
-	imapFolder     = cmp.Or(os.Getenv("IMAP_FOLDER"), "INBOX")
-	subjectFilter  = cmp.Or(os.Getenv("SUBJECT_FILTER"), "")
-	senderFilter   = cmp.Or(os.Getenv("SENDER_FILTER"), "")
-	unSeenOnly     = cmp.Or(os.Getenv("UNSEEN_ONLY"), "true") == "true"
-	isReadOnly     = cmp.Or(os.Getenv("READ_ONLY"), "true") == "true"
-	attachmentType = cmp.Or(os.Getenv("ATTACHMENT_TYPE"), "application/pdf")
-	command        = cmp.Or(os.Getenv("COMMAND"), "ls -lh %s")
+	imapServer      = os.Getenv("IMAP_SERVER")
+	username        = os.Getenv("EMAIL_USERNAME")
+	password        = os.Getenv("EMAIL_PASSWORD")
+	outputDir       = cmp.Or(os.Getenv("OUTPUT_DIR"), "output")
+	imapFolder      = cmp.Or(os.Getenv("IMAP_FOLDER"), "INBOX")
+	subjectFilter   = cmp.Or(os.Getenv("SUBJECT_FILTER"), "")
+	senderFilter    = cmp.Or(os.Getenv("SENDER_FILTER"), "")
+	unSeenOnly      = cmp.Or(os.Getenv("UNSEEN_ONLY"), "true") == "true"
+	isReadOnly      = cmp.Or(os.Getenv("READ_ONLY"), "true") == "true"
+	attachmentTypes = strings.Split(cmp.Or(os.Getenv("ATTACHMENT_TYPES"), "application/pdf"), ",")
+	command         = cmp.Or(os.Getenv("COMMAND"), "ls -lh %s")
 
 	ErrMissingVar        = errors.New("IMAP_SERVER, EMAIL_USERNAME and EMAIL_PASSWORD environment variables must be set")
 	ErrCreatingOutputDir = errors.New("error creating output dir")
@@ -170,8 +171,8 @@ func processAttachment(e *message.Entity) error {
 		return fmt.Errorf("failed to get content type: %w", cErr)
 	}
 
-	if kind != attachmentType {
-		slog.Warn("skipping part with content", "type", kind, "expected", attachmentType)
+	if slices.Index(attachmentTypes, kind) == -1 {
+		slog.Warn("skipping part with content", "type", kind, "expected", attachmentTypes)
 		return nil
 	}
 
