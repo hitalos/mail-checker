@@ -28,7 +28,7 @@ var (
 	unSeenOnly      = cmp.Or(os.Getenv("UNSEEN_ONLY"), "true") == "true"
 	isReadOnly      = cmp.Or(os.Getenv("READ_ONLY"), "true") == "true"
 	attachmentTypes = strings.Split(cmp.Or(os.Getenv("ATTACHMENT_TYPES"), "application/pdf"), ",")
-	command         = cmp.Or(os.Getenv("COMMAND"), "ls -lh %s")
+	command         = cmp.Or(os.Getenv("COMMAND"), "stat '%s'")
 
 	ErrMissingVar        = errors.New("IMAP_SERVER, EMAIL_USERNAME and EMAIL_PASSWORD environment variables must be set")
 	ErrCreatingOutputDir = errors.New("error creating output dir")
@@ -65,10 +65,10 @@ func main() {
 
 	seqset := createFilter(c)
 
-	messages := make(chan *imap.Message, 1)
-	done := make(chan error, 1)
+	messages := make(chan *imap.Message, 10)
+	done := make(chan error, 10)
 	go func() {
-		done <- c.Fetch(seqset, []imap.FetchItem{imap.FetchEnvelope, imap.FetchFlags, imap.FetchRFC822}, messages)
+		done <- c.Fetch(seqset, []imap.FetchItem{imap.FetchEnvelope, imap.FetchFlags, imap.FetchRFC822, imap.FetchBody}, messages)
 	}()
 
 	for msg := range messages {
@@ -76,6 +76,11 @@ func main() {
 			slog.Error(err.Error())
 			break
 		}
+	}
+
+	if err = <-done; err != nil {
+		slog.Error(err.Error())
+		os.Exit(1)
 	}
 }
 
@@ -148,14 +153,21 @@ func processMessage(msg *imap.Message) error {
 			return fmt.Errorf("failed to read message body: %w", err)
 		}
 
-		multiPartReader := entity.MultipartReader()
-		for e, err := multiPartReader.NextPart(); err != io.EOF; e, err = multiPartReader.NextPart() {
+		mpr := entity.MultipartReader()
+		if mpr == nil {
+			if err = processAttachment(entity); err != nil {
+				return fmt.Errorf("failed to processing message: %w", err)
+			}
+			continue
+		}
+
+		for e, err := mpr.NextPart(); err != io.EOF; e, err = mpr.NextPart() {
 			if err != nil {
 				slog.Error("failed to read multipart section", "error", err)
 				continue
 			}
 
-			if err = processAttachment(e); err != nil {
+			if err := processAttachment(e); err != nil {
 				slog.Error("failed to process attachment", "error", err)
 				continue
 			}
@@ -172,16 +184,20 @@ func processAttachment(e *message.Entity) error {
 	}
 
 	if slices.Index(attachmentTypes, kind) == -1 {
-		slog.Warn("skipping part with content", "type", kind, "expected", attachmentTypes)
+		slog.Info("skipping part with content", "type", kind, "expected", attachmentTypes)
 		return nil
 	}
 
 	if params["name"] == "" {
-		slog.Warn("no name parameter in content type, skipping")
-		return nil
+		_, p, err := e.Header.ContentDisposition()
+		if err != nil {
+			return errors.New("skipping unrecognized attachment")
+		}
+		params["name"] = p["filename"]
 	}
 
-	file, err := os.Create(filepath.Join(outputDir, params["name"]))
+	filename := filepath.Clean(filepath.Join(outputDir, params["name"]))
+	file, err := os.Create(filename)
 	if err != nil {
 		return fmt.Errorf("failed to create file: %w", err)
 	}
@@ -194,28 +210,38 @@ func processAttachment(e *message.Entity) error {
 		return fmt.Errorf("failed to close file: %w", err)
 	}
 
-	slog.Info("Saved PDF attachment", "name", params["name"])
+	slog.Info("Saved attachment", "name", params["name"])
 
 	if command != "" {
-		return execCommand(params["name"])
+		return execCommand(filename)
 	}
 
 	return nil
 }
 
 func execCommand(filename string) error {
-	out, _ := os.Create(filepath.Join(outputDir, filename+".out"))
+	cmd := exec.Command("sh", "-c", fmt.Sprintf(command, filename))
+
+	if LogLevel > slog.LevelDebug {
+		slog.Info("Command executed successfully")
+		return cmd.Run()
+	}
+
+	out, _ := os.Create(filepath.Clean(filename + ".out"))
 	defer func() { _ = out.Close() }()
 
-	cmd := exec.Command("sh", "-c", fmt.Sprintf(command, filename))
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		_, _ = out.Write(output)
 		return fmt.Errorf("command execution failed: %w", err)
 	}
-	_, _ = out.Write(output)
 
-	slog.Info("Command executed successfully")
+	if _, err = out.Write(output); err != nil {
+		return err
+	}
+
+	slog.Debug(fmt.Sprintf("Command executed successfully and output written to %q", filename+".out"))
+
 	return nil
 }
 
