@@ -12,6 +12,16 @@ build:
 run:
 	@go run .
 
+install-systemd-user:
+	cp systemd/mail-checker.* ~/.config/systemd/user/
+	systemctl --user enable mail-checker.service
+	systemctl --user enable --now mail-checker.timer
+	systemctl --user daemon-reload
+
+uninstall-systemd-user:
+	rm ~/.config/systemd/user/mail-checker.{service,timer}
+	systemctl --user daemon-reload
+
 ## clean: clean up the built files
 clean: confirm
 	@echo "Cleaning up…"

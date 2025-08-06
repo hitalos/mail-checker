@@ -1,0 +1,10 @@
+[Unit]
+Description=Scheduling of mail-checker
+
+[Timer]
+Persistent=true
+OnCalendar=Mon,Tue,Wed,Thu,Fri *-*-* 08..18:00:00 UTC
+# OnActiveSec=30min
+
+[Install]
+WantedBy=timers.target

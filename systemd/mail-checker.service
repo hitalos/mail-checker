@@ -1,0 +1,10 @@
+[Unit]
+Description=Run mail-checker
+
+[Service]
+ExecStart=%h/go/bin/mail-checker
+Type=oneshot
+EnvironmentFile=%h/.config/mail-checker/.env
+
+[Install]
+WantedBy=default.target
