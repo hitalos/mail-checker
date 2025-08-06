@@ -12,6 +12,10 @@ build:
 run:
 	@go run .
 
+## install: install the binary to ~/bin/go
+install: build
+	go install .
+
 install-systemd-user:
 	cp systemd/mail-checker.* ~/.config/systemd/user/
 	systemctl --user enable mail-checker.service
