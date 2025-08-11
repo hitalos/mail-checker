@@ -16,6 +16,7 @@ import (
 	"github.com/emersion/go-imap"
 	"github.com/emersion/go-imap/client"
 	"github.com/emersion/go-message"
+	_ "github.com/emersion/go-message/charset"
 )
 
 var (
