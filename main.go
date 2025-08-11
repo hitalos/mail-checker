@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/emersion/go-imap"
 	"github.com/emersion/go-imap/client"
@@ -155,7 +156,7 @@ func processMessage(msg *imap.Message) error {
 
 		mpr := entity.MultipartReader()
 		if mpr == nil {
-			if err = processAttachment(entity); err != nil {
+			if err = processAttachment(entity, msg.Envelope.Date); err != nil {
 				return fmt.Errorf("failed to processing message: %w", err)
 			}
 			continue
@@ -167,7 +168,7 @@ func processMessage(msg *imap.Message) error {
 				continue
 			}
 
-			if err := processAttachment(e); err != nil {
+			if err := processAttachment(e, msg.Envelope.Date); err != nil {
 				slog.Error("failed to process attachment", "error", err)
 				continue
 			}
@@ -177,7 +178,7 @@ func processMessage(msg *imap.Message) error {
 	return nil
 }
 
-func processAttachment(e *message.Entity) error {
+func processAttachment(e *message.Entity, date time.Time) error {
 	kind, params, cErr := e.Header.ContentType()
 	if cErr != nil {
 		return fmt.Errorf("failed to get content type: %w", cErr)
@@ -209,6 +210,8 @@ func processAttachment(e *message.Entity) error {
 	if err = file.Close(); err != nil {
 		return fmt.Errorf("failed to close file: %w", err)
 	}
+
+	_ = os.Chtimes(filename, date, date)
 
 	slog.Info("Saved attachment", "name", params["name"])
 
