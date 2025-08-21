@@ -17,6 +17,7 @@ import (
 	"github.com/emersion/go-imap/client"
 	"github.com/emersion/go-message"
 	_ "github.com/emersion/go-message/charset"
+	"golang.org/x/term"
 )
 
 var (
@@ -36,7 +37,8 @@ var (
 	ErrCreatingOutputDir = errors.New("error creating output dir")
 	ErrNoMsgs            = errors.New("no messages found in the mailbox")
 
-	LogLevel = levelByName(cmp.Or(os.Getenv("LOG_LEVEL"), "INFO"))
+	LogLevel       = levelByName(cmp.Or(os.Getenv("LOG_LEVEL"), "INFO"))
+	progressFormat = ternary(term.IsTerminal(int(os.Stdout.Fd())), "[\033[31m%s%s\033[0m]", "[%s%s]")
 )
 
 func main() {
@@ -73,12 +75,21 @@ func main() {
 		done <- c.Fetch(seqset, []imap.FetchItem{imap.FetchEnvelope, imap.FetchFlags, imap.FetchRFC822, imap.FetchBody}, messages)
 	}()
 
+	i := 1
+	total := int(c.Mailbox().Messages)
 	for msg := range messages {
+		slog.Debug("Processing message", "seq", i, "subject", msg.Envelope.Subject, "date", msg.Envelope.Date)
 		if err := processMessage(msg); err != nil {
 			slog.Error(err.Error())
 			break
 		}
+
+		if LogLevel > slog.LevelDebug {
+			progress(i, total)
+		}
+		i++
 	}
+	fmt.Println("\nProcessing complete")
 
 	if err = <-done; err != nil {
 		slog.Error(err.Error())
@@ -105,7 +116,7 @@ func newClient(server, username, password string) (*client.Client, error) {
 		return nil, ErrNoMsgs
 	}
 
-	slog.Info("Connected to mailbox", "folder", mbox.Name, "messages", mbox.Messages)
+	slog.Debug("Connected to mailbox", "folder", mbox.Name, "messages", mbox.Messages)
 
 	return c, nil
 }
@@ -137,18 +148,12 @@ func createFilter(c *client.Client) *imap.SeqSet {
 
 	seqset := new(imap.SeqSet)
 	seqset.AddNum(uids...)
-	slog.Info(fmt.Sprintf("Processing %d filtered messages", len(uids)))
+	slog.Debug(fmt.Sprintf("Processing %d filtered messages", len(uids)))
 
 	return seqset
 }
 
 func processMessage(msg *imap.Message) error {
-	if msg == nil {
-		return errors.New("received nil message")
-	}
-
-	slog.Info("Processing message", "subject", msg.Envelope.Subject, "date", msg.Envelope.Date)
-
 	for _, r := range msg.Body {
 		entity, err := message.Read(r)
 		if err != nil {
@@ -186,7 +191,7 @@ func processAttachment(e *message.Entity, date time.Time) error {
 	}
 
 	if slices.Index(attachmentTypes, kind) == -1 {
-		slog.Info("skipping part with content", "type", kind, "expected", attachmentTypes)
+		slog.Debug("skipping part with content", "type", kind, "expected", attachmentTypes)
 		return nil
 	}
 
@@ -262,4 +267,24 @@ func levelByName(name string) slog.Level {
 	default:
 		return 0
 	}
+}
+
+func progress(current, total int) {
+	columns, _, err := term.GetSize(int(os.Stdout.Fd()))
+	if err != nil || columns < 40 {
+		columns = 80
+	}
+	barSize := columns - 32
+	done := current * barSize / total
+	rest := barSize - done
+	percent := float64(current) / float64(total) * 100
+	bar := fmt.Sprintf(progressFormat, strings.Repeat("#", done), strings.Repeat(" ", rest))
+	fmt.Printf("Progress: %s %.2f%% (%d/%d)\r", bar, percent, current, total)
+}
+
+func ternary(cond bool, a, b string) string {
+	if cond {
+		return a
+	}
+	return b
 }
