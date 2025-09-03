@@ -17,7 +17,6 @@ import (
 	"github.com/emersion/go-imap/client"
 	"github.com/emersion/go-message"
 	_ "github.com/emersion/go-message/charset"
-	"golang.org/x/term"
 )
 
 var (
@@ -37,8 +36,7 @@ var (
 	ErrCreatingOutputDir = errors.New("error creating output dir")
 	ErrNoMsgs            = errors.New("no messages found in the mailbox")
 
-	LogLevel       = levelByName(cmp.Or(os.Getenv("LOG_LEVEL"), "INFO"))
-	progressFormat = ternary(term.IsTerminal(int(os.Stdout.Fd())), "[\033[31m%s%s\033[0m]", "[%s%s]")
+	LogLevel = levelByName(cmp.Or(os.Getenv("LOG_LEVEL"), "INFO"))
 )
 
 func main() {
@@ -267,24 +265,4 @@ func levelByName(name string) slog.Level {
 	default:
 		return 0
 	}
-}
-
-func progress(current, total int) {
-	columns, _, err := term.GetSize(int(os.Stdout.Fd()))
-	if err != nil || columns < 40 {
-		columns = 80
-	}
-	barSize := columns - 32
-	done := current * barSize / total
-	rest := barSize - done
-	percent := float64(current) / float64(total) * 100
-	bar := fmt.Sprintf(progressFormat, strings.Repeat("#", done), strings.Repeat(" ", rest))
-	fmt.Printf("Progress: %s %.2f%% (%d/%d)\r", bar, percent, current, total)
-}
-
-func ternary(cond bool, a, b string) string {
-	if cond {
-		return a
-	}
-	return b
 }
